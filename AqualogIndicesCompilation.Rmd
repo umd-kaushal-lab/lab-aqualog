@@ -27,15 +27,17 @@ rm(list=ls())
 
 # call Libraries
 library(tidyverse)
-library(boxr)
-library(rjson)
 
-# connect to Box
-config <- fromJSON(file = './config.json')
+## # Box connection stuff (ignore)
+## library(boxr)
+## library(rjson)
 
-box_auth(
-  client_id = config$client_id,
-  client_secret = config$client_secret)
+## # connect to Box
+## config <- fromJSON(file = './config.json')
+
+## box_auth(
+##   client_id = config$client_id,
+##   client_secret = config$client_secret)
 
 ```
 
@@ -48,52 +50,86 @@ Set the working directory to the absorbance spectra folder, then run the followi
 You should result with a csv titled "Absorbance Compilation"
 
 ```{r Absorbance}
-#Read in all of the absorbance spectra ####
-#List all of the files we'll read in
-filenames <- list.files(pattern="*.dat")
 
-# seperate all of the absorbance data into "Absorbance" folder, all EEMS data into an "EEMS" folder
-if(!dir.exists("Absorbance")) {
-  dir.create("./Absorbance") 
+#Read in all of the absorbance spectra ####
+# connect to raw data filepath
+fp.data <- file.path(getwd(), "data")
+
+#List all of the files we'll read in
+filenames <- list.files(fp.data, pattern="*.dat")
+
+# seperate all of the absorbance data into "Absorbance" folder, all EEMS data into an "EEMS" folder, and an all data folder "AbsEEMS"
+fp.abs <- file.path(fp.data, "Absorbance_highres")
+if(!dir.exists(fp.abs)) {
+  dir.create(fp.abs) 
 }
 
-if(!dir.exists("EEMS")) {
-  dir.create("./EEMS") 
+fp.eems <- file.path(fp.data, "EEMS")
+if(!dir.exists(fp.eems)) {
+  dir.create(fp.eems) 
+}
+
+# folder for low res abs from eems
+fp.lowa <- file.path(fp.data, "Absorbance_lowres")
+if(!dir.exists(fp.lowa)) {
+  dir.create(fp.lowa) 
+}
+
+# folder for combined abs and eems data
+fp.all <- file.path(fp.data, "all")
+if(!dir.exists(fp.all)) {
+  dir.create(fp.all) 
 }
 
 for(fn in filenames) {
-  # copy absorbance data into absorbance folder
-  fpa <- file.path(getwd(), fn)
-  fda <- file.path(getwd(), 'Absorbance', fn)
+  # file path of raw file
+  fp <- file.path(fp.data, fn)
+
+  # set destination file path for abs and EEMS, and all
+  fda <- file.path(fp.abs, fn)
+  fde <- file.path(fp.eems, fn)
+  fdlowa <- file.path(fp.lowa, fn)
+  fdall <- file.path(fp.all, fn)
   
+  # copy absorbance data into absorbance folder
   if(grepl("- Abs Spectra Graphs", fn)) {
-    print(fn)
-    file.copy(fpa, fda)
+    print(paste("sorting data for: ", fn))
+
+    # seperate high and low res
+    if(grepl("^A", fn)) {
+      file.copy(fp, fda)
+    } else if(grepl("^E", fn)) {
+      file.copy(fp, fdlowa)
+    } else {
+      ## print(paste("WARNING: no E or A prefix on ", fn, "cannot be sorted"))
+    }
+    
+    file.copy(fp, fdall)
   }
 
   # copy EEMS data into EEMS folder
-  fpe <- file.path(getwd(), fn)
-  fde <- file.path(getwd(), 'EEMS', fn)
-
-  if(grepl("Processed Graph_IN", fn)) {
-    print(fn)
-    file.copy(fpe, fde)
+  if(grepl("Processed Graph_ IN", fn)) {
+    file.copy(fp, fde)
+    file.copy(fp, fdall)
   }
 }
 
-#Then call them in
+## High-resolution Absorbance only 
+filenames <- list.files(fp.abs, pattern="*.dat", full.names = TRUE)
+
+# then call them in
 rawabs <- sapply(filenames, FUN = read.delim, simplify = FALSE, USE.NAMES = TRUE)
 
-#Need to clean up the names in the list
-#Change filenames to remove the canned part we don't want
-filenames <- sub(" .*", "", filenames)
+# Need to clean up the names in the list
+# Change filenames to remove the canned part we don't want
+# then make these object names in rawabs
+filenames <- sub(" .*", "", basename(filenames))
 
-#Then sub the name onto the list
 names(rawabs) <- filenames
 
-#Now, compile all of these columns into one dataframe ####
-#Remove all columns except for the absorbance
-rawabs <- lapply(rawabs, function(x){select(x, -c("I", "I.dark", "R", "R.dark", "XCorrect", "Ic", "Rc", "Ic.Rc", "Percent.T"))})
+# Now, compile all of these columns into one dataframe ####
+# Remove all columns except for the absorbance
+rawabs <- lapply(rawabs, function(x) {select(x, -c("I", "I.dark", "R", "R.dark", "XCorrect", "Ic", "Rc", "Ic.Rc", "Percent.T"))})
 
 #Make the Absorbance column name the sample name and remove extra columns
 for(i in unique(1:length(filenames))){
@@ -148,6 +184,7 @@ spectra[,2:602] <- lapply(spectra[,2:602], abs.norm)
 
 #set up an empty dataframe with properly named columns
 columns <- c("name","decadic.a254","S275_295","S350_400","SRatio") 
+
 # pass this vector length to ncol parameter
 # and nrow with 0
 calcs <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
@@ -213,7 +250,7 @@ for(i in unique(spectra$filenames)){
 }
 
 #Clean it up so you just have calcs and spectra
-rm(l275_295, l350_400, log, obs, regl275_295, regl350_400, row, a254, columns, i, name, S275_295, S350_400, SRatio, abs.norm)
+rm(l275_295, l350_400, log, obs, regl275_295, regl350_400, row, decadic.a254, columns, i, name, S275_295, S350_400, SRatio, abs.norm)
 
 #Bind calcs and spectra together
 compilation <- cbind(calcs, spectra)
@@ -221,7 +258,25 @@ compilation <- cbind(calcs, spectra)
 
 #Remove the extra column of file names
 
+# create column for dilution factor
 compilation <- select(compilation, -filenames)
+compilation$dilution <- 1
+for(i in 1:nrow(compilation)) {
+  x <- compilation$decadic.a254[i]
+  if(x > 20 && x < 30) {
+    compilation$dilution[i] <- 1.6
+  } else if(x > 30 && x < 40) {
+    compilation$dilution[i] <- 2
+  } else if(x > 40 && x < 50) {
+    compilation$dilution[i] <- 2.6666666666666
+  } else if(x > 50 && x < 80) {
+    compilation$dilution[i] <- 4
+  } else if(x > 80) {
+    compilation$dilution[i] <- NA
+  } else {
+    compilation$dilution[i] <- 1
+  }
+}
 
 #CHANGE WORKING DIRECTORY TO WHEREVER YOU WANT TO SAVE THE FILE
 #Save File
