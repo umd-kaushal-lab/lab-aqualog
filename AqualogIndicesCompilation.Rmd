@@ -42,7 +42,13 @@ Create a folder for the high resolution absorbance data (which we use), the EEMs
 ```{r fileOrg}
 # connect to raw data filepath
 #This pull out the working directory, can add ", "data"" and it specifies a folder within the WD
-fp.data <- file.path(getwd())
+fp.data <- file.path("C:/Users/Public/Documents/Jobin Yvon/Data/Shelton/20230728_SAS_RoutineBES_07072023_07282023/")
+
+# the final run results will be saved in:
+fp.results <- file.path(fp.data, "results")
+if(!dir.exists(fp.results)) {
+  dir.create(fp.results) 
+}
 
 #List all of the files we'll read in
 filenames <- list.files(fp.data, pattern="*.dat")
@@ -290,7 +296,7 @@ for(i in 1:nrow(compilation)) {
 #CHANGE WORKING DIRECTORY TO WHEREVER YOU WANT TO SAVE THE FILE
 #Save File
 #UPDATE FILE NAME AS NEEDED
-write.csv(compilation, "AbsorbanceCompilation.csv")
+write.csv(compilation, file.path(fp.results, "AbsorbanceCompilation.csv"))
 
 #Now make a dilution factor dataframe
 dilfac <- data.frame(name = compilation$name, dilution = compilation$dilution)
@@ -318,7 +324,7 @@ names(allEEM) <- filenames
 
 
 #Need to load in the reference blank
-blank <- read.delim("EBlank1 (01) - Waterfall Plot Blank.dat")
+blank <- read.delim(file.path(fp.data, "EBlank1 (01) - Waterfall Plot Blank.dat"))
 
 #Calculate the parameter from the blank that we need in Protein-like/Humic-like calculations
 blankem376_424 <- filter(blank, Wavelength >= 376 & Wavelength <= 424)
@@ -430,7 +436,7 @@ rm(oneEEM, row, oldBIX, columns, oldFI, oldHIX, filenames, hl, i, PH, pl, onedil
 #CHANGE WORKING DIRECTORY TO WHEREVER YOU WANT TO SAVE THE FILE
 #Save File
 #UPDATE FILE NAME AS NEEDED
-write.csv(oldindices, "FluoroOldIndices.csv")
+write.csv(oldindices, file.path(fp.results,"FluoroOldIndices.csv"))
 
 #clean up the file names
 rm(allEEM, blank, blankem376_424, blanksum, x)
