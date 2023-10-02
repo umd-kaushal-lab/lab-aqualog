@@ -3,21 +3,16 @@ title: "AqualogCompilation"
 output: html_document
 ---
 
-Sydney Shelton 7/31/2023
+Sydney Shelton and Wes Slaughter 10/02/2023
 This code is for compiling various different things from the Aqualog Data:
-a254 for SUVA calculation, Spectral Slopes and Slope Ratio, BIX, HIX, FI, P/H, Protein-like, Humic-like
-
-First, transfer all of the Absorbance spectra to a folder called "Absorbance" - these are the "- Absorbance Spectra Graphs" files
-Then, transfer all of the normalized EEMs to a folder titled "EEMs" - these are "Processed Graph_IN"
-Then, create a text file in the EEMs folder for the baseline. Open one of the "- Waterfall Plot Blank" .dat files in the notebook.
-Click file - save as - text file with name "EEMBaseline" (make sure this name is completely correct) in EEM folder.
-
-Then, set the working directory to the project folder (in which are the Absorbance/EEM folders)
-Session -> Set Working Directory -> Choose Directory -> navigate to folder and click "open"
-Then run the code!
+a254 for SUVA calculation, Spectral Slopes and Slope Ratio
+BIX, HIX, FI, P/H, Protein-like, Humic-like to match the old fluorometer code with dilution correction
+Inner filter effect correction, raman normalization, remove raman/rayleigh scattering lines, and calculate indices using staRdom
 
 Note for setting up on fluoro computer - R markdown automatically sends each chunk to script location folder. You can change this to current 
 working directory by going to Tools -> Global Options -> R Markdown -> Evaluate chunks in directory to "current"
+
+Set the working directory to the folder for your run! Double check that all file names are correct and match, and then run the script.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -41,19 +36,13 @@ library(tidyverse)
 
 ```
 
+#Organize all of the files into their respective folders
+Create a folder for the high resolution absorbance data (which we use), the EEMs, and the low resolution absorbance data (for IFE correction)
 
-Absorbance formatting/calculations
-Put all of the Napierian absorbance coefficients into one dataframe
-Include Spectral slopes from 275-295 nm and 350-400 nm, and slope ratio (275–295-nm slope : 350–400-nm slope)
-Plus the decadic form of a254 for SUVA calculation
-Set the working directory to the absorbance spectra folder, then run the following chunk. NaNs will be produced, this doesn't matter.
-You should result with a csv titled "Absorbance Compilation"
-
-```{r Absorbance}
-
-#Read in all of the absorbance spectra ####
+```{r fileOrg}
 # connect to raw data filepath
-fp.data <- file.path(getwd(), "data")
+#This pull out the working directory, can add ", "data"" and it specifies a folder within the WD
+fp.data <- file.path(getwd())
 
 #List all of the files we'll read in
 filenames <- list.files(fp.data, pattern="*.dat")
@@ -114,7 +103,17 @@ for(fn in filenames) {
   }
 }
 
-## High-resolution Absorbance only 
+```
+
+#Absorbance formatting/calculations
+Put all of the Napierian absorbance coefficients into one dataframe
+Include Spectral slopes from 275-295 nm and 350-400 nm, and slope ratio (275–295-nm slope : 350–400-nm slope)
+Plus the decadic form of a254 for SUVA calculation
+
+
+```{r Absorbance}
+
+#Read in all of the absorbance spectra ####
 filenames <- list.files(fp.abs, pattern="*.dat", full.names = TRUE)
 
 # then call them in
@@ -199,7 +198,7 @@ colnames(row) = columns
 
 #Now complete the calculations for each row
 for(i in unique(spectra$filenames)){
-  #Pull out one spectra/observation
+    #Pull out one spectra/observation
   obs <- filter(spectra, filenames == i)
   #Pull out decadic a254
   decadic.a254 <- (obs$X254)/2.303
@@ -211,8 +210,17 @@ for(i in unique(spectra$filenames)){
   #calculate S275_295 and S350_400 through linear regression of log transformed spectra
   #This is the preferred method in Helms et al 2008, but this could also be done by 
   #fitting an exponential decay equation; there was less than a 1% difference between methods
-  #May need to put in an if else in case theres a spectra that's zero or negative shorter than 400
-  
+  #First, use an if/else statement to put in NA for any blanks - used "lank" here so capital/lowercase B is okay
+    if(grepl("lank", name)) {
+      #Put in NA for all of the spectral slope calculations
+      row[,1] <- name
+      row[,2] <- decadic.a254
+      row[,3] <- NA
+      row[,4] <- NA
+      row[,5] <- NA
+     } else {
+    
+  #Then calculate everything
   #Take the log
   #NOTE: TAKING THE LOG WILL CAUSE WARNINGS FOR THE 0s/negatives, it doesn't matter
   log <- log(obs)
@@ -245,11 +253,12 @@ for(i in unique(spectra$filenames)){
   row[,3] <- S275_295
   row[,4] <- S350_400
   row[,5] <- SRatio
+     } #end the else
   #rbind the row onto calcs
   calcs <- rbind(calcs, row)
 }
 
-#Clean it up so you just have calcs and spectra
+#Clean it up so you just have calcs, spectra, and what we need for EEMs section
 rm(l275_295, l350_400, log, obs, regl275_295, regl350_400, row, decadic.a254, columns, i, name, S275_295, S350_400, SRatio, abs.norm)
 
 #Bind calcs and spectra together
@@ -282,31 +291,34 @@ for(i in 1:nrow(compilation)) {
 #Save File
 #UPDATE FILE NAME AS NEEDED
 write.csv(compilation, "AbsorbanceCompilation.csv")
+
+#Now make a dilution factor dataframe
+dilfac <- data.frame(name = compilation$name, dilution = compilation$dilution)
+#And remove the A
+dilfac$name <- substring(dilfac$name, 2)
 ```
 
 
-Fluorescence indices formatting/calculations
-Calculating everything the same way as the old fluorometer
+#Fluorescence indices formatting/calculations- Calculating everything the same way as the old fluorometer
 HIX, BIX, FI, P/H, Protein-like, and humic-like
-Set the working directory to the EEM folder
-Then click run current chunk.
 
-```{r EEM}
+
+```{r EEMold}
 knitr::opts_chunk$set(echo = TRUE)
 
 #Make a list of all of the filenames in the folder
-filenames <- list.files(pattern="*.dat")
+filenames <- list.files(fp.eems, pattern="*.dat", full.names = TRUE)
 #Load in all of the files to one list
 allEEM <- sapply(filenames,FUN = read.delim,simplify = FALSE,USE.NAMES = TRUE)
 #Need to clean up the names in the list
 #Change filenames to remove the canned part we don't want
-filenames <- sub(" .*", "", filenames)
+filenames <- sub(" .*", "", basename(filenames))
 #Then sub the name onto the list
 names(allEEM) <- filenames
 
 
 #Need to load in the reference blank
-blank <- read.delim("EEMBaseline.txt")
+blank <- read.delim("EBlank1 (01) - Waterfall Plot Blank.dat")
 
 #Calculate the parameter from the blank that we need in Protein-like/Humic-like calculations
 blankem376_424 <- filter(blank, Wavelength >= 376 & Wavelength <= 424)
@@ -317,12 +329,12 @@ blanksum <- sum(blankem376_424$X350)
 #We're going to need to be careful here keeping track of names, since names don't populate in the list
 
 #set up an empty dataframes with properly named columns
-columns <- c("Sample","FI","BIX","HIX","P/H", "Protein-like", "Humic-like") 
+columns <- c("Sample","oldFI","oldBIX","oldHIX","P/H", "Protein-like", "Humic-like") 
 # pass this vector length to ncol parameter
 # and nrow with 0
-indices <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
+oldindices <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
 # assign column names
-colnames(indices) = columns
+colnames(oldindices) = columns
 
 #set up a dataframe for the row
 row <- data.frame(matrix(nrow = 1, ncol = length(columns))) 
@@ -342,18 +354,27 @@ for(i in unique(filenames)){
   #make Column 1 numeric too
   oneEEM$Sample...Blank <- as.numeric(oneEEM$Sample...Blank)
   
+  #Correct for dilution, multiply EEM by dilution factor
+  #Pull out the dilution factor for that sample
+  onedilfac <- filter(dilfac, name == substring(i, 2))
+  onedilfac <- onedilfac$dilution
+  
+  #And multiply the EEM by it, excluding the column with the wavelength
+  oneEEM <- oneEEM %>% mutate(across(starts_with("X"), ~ . *onedilfac))
+  
   #FI
   #Originally in McKnight et al 2001 excitation at 370 with ratio between 450nm:500nm (included what it is in our old python code)
+  #Note, in the new EEMS this should be updated as Cory et al 2010
   em450 <- filter(oneEEM, Sample...Blank == 448)
   em500 <- filter(oneEEM, Sample...Blank == 498)
-  FI <- em450$X370/em500$X370
+  oldFI <- em450$X370/em500$X370
   rm(em450, em500)
   
   #BIX
   #For excitation at 310 nm, ratio of emission 380nm/430nm (USGS protocol)
   em380 <- filter(oneEEM, Sample...Blank == 380)
   em430 <- filter(oneEEM, Sample...Blank == 430)
-  BIX <- em380$X310/em430$X310
+  oldBIX <- em380$X310/em430$X310
   rm(em380, em430)
   
   #Now calculate HIX, this is based on Ohno, 2002; Zsolnay et al., 1999; and listed in USGS Aqualog Protocol
@@ -361,7 +382,7 @@ for(i in unique(filenames)){
   #sum 435 to 480, sum 300 to 345
   em435_480 <- filter(oneEEM, Sample...Blank >= 435 & Sample...Blank <= 480)
   em300_345 <- filter(oneEEM, Sample...Blank >= 300 & Sample...Blank <= 345)
-  HIX <- sum(em435_480$X255)/(sum(em435_480$X255)+sum(em300_345$X255))
+  oldHIX <- sum(em435_480$X255)/(sum(em435_480$X255)+sum(em300_345$X255))
   rm(em435_480,em300_345)
   
   
@@ -390,35 +411,28 @@ for(i in unique(filenames)){
   #Put all these values into the dataframe for all the calculations
   #Put all of these values into the row
   row$Sample <- i
-  row$FI <- FI
-  row$BIX <- BIX
-  row$HIX <- HIX
+  row$oldFI <- oldFI
+  row$oldBIX <- oldBIX
+  row$oldHIX <- oldHIX
   row$`P/H`<-PH
   row$`Protein-like`<-pl
   row$`Humic-like`<-hl
   
   #rbind the row onto calcs
-  indices <- rbind(indices, row)
+  oldindices <- rbind(oldindices, row)
    
 }
 
 #Clean up the environment
-rm(oneEEM, row, BIX, columns, FI, HIX, filenames, hl, i, PH, pl)
+rm(oneEEM, row, oldBIX, columns, oldFI, oldHIX, filenames, hl, i, PH, pl, onedilfac)
 
 
 #CHANGE WORKING DIRECTORY TO WHEREVER YOU WANT TO SAVE THE FILE
 #Save File
 #UPDATE FILE NAME AS NEEDED
-write.csv(indices, "FluoroIndices.csv")
+write.csv(oldindices, "FluoroOldIndices.csv")
 
-
-#I don't believe we did any of the following steps with the old fluorometer
-#But before further processing we will need to:
-#Water Raman normalization
-#IFE correction
-#Rayliegh masking
-#Openfluor should go through how to do this: https://www.youtube.com/watch?v=oKC5yt4v0BA&ab_channel=HORIBAScientific
-#What I don't know is the interpolation to 2 nm
-#starDom package in R (Pucher et al 2019)
+#clean up the file names
+rm(allEEM, blank, blankem376_424, blanksum, x)
 
 ```
