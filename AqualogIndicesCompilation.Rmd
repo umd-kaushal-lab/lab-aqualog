@@ -53,7 +53,8 @@ You should result with a csv titled "Absorbance Compilation"
 
 #Read in all of the absorbance spectra ####
 # connect to raw data filepath
-fp.data <- file.path(getwd(), "data")
+#This pull out the working directory, can add ", "data"" and it specifies a folder within the WD
+fp.data <- file.path(getwd())
 
 #List all of the files we'll read in
 filenames <- list.files(fp.data, pattern="*.dat")
@@ -199,7 +200,7 @@ colnames(row) = columns
 
 #Now complete the calculations for each row
 for(i in unique(spectra$filenames)){
-  #Pull out one spectra/observation
+    #Pull out one spectra/observation
   obs <- filter(spectra, filenames == i)
   #Pull out decadic a254
   decadic.a254 <- (obs$X254)/2.303
@@ -211,8 +212,17 @@ for(i in unique(spectra$filenames)){
   #calculate S275_295 and S350_400 through linear regression of log transformed spectra
   #This is the preferred method in Helms et al 2008, but this could also be done by 
   #fitting an exponential decay equation; there was less than a 1% difference between methods
-  #May need to put in an if else in case theres a spectra that's zero or negative shorter than 400
-  
+  #First, use an if/else statement to put in NA for any blanks - used "lank" here so capital/lowercase B is okay
+    if(grepl("lank", name)) {
+      #Put in NA for all of the spectral slope calculations
+      row[,1] <- name
+      row[,2] <- decadic.a254
+      row[,3] <- NA
+      row[,4] <- NA
+      row[,5] <- NA
+     } else {
+    
+  #Then calculate everything
   #Take the log
   #NOTE: TAKING THE LOG WILL CAUSE WARNINGS FOR THE 0s/negatives, it doesn't matter
   log <- log(obs)
@@ -245,11 +255,12 @@ for(i in unique(spectra$filenames)){
   row[,3] <- S275_295
   row[,4] <- S350_400
   row[,5] <- SRatio
+     } #end the else
   #rbind the row onto calcs
   calcs <- rbind(calcs, row)
 }
 
-#Clean it up so you just have calcs and spectra
+#Clean it up so you just have calcs, spectra, and what we need for EEMs section
 rm(l275_295, l350_400, log, obs, regl275_295, regl350_400, row, decadic.a254, columns, i, name, S275_295, S350_400, SRatio, abs.norm)
 
 #Bind calcs and spectra together
