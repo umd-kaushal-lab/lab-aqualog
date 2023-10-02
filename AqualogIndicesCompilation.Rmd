@@ -293,31 +293,34 @@ for(i in 1:nrow(compilation)) {
 #Save File
 #UPDATE FILE NAME AS NEEDED
 write.csv(compilation, "AbsorbanceCompilation.csv")
+
+#Now make a dilution factor dataframe
+dilfac <- data.frame(name = compilation$name, dilution = compilation$dilution)
+#And remove the A
+dilfac$name <- substring(dilfac$name, 2)
 ```
 
 
-Fluorescence indices formatting/calculations
-Calculating everything the same way as the old fluorometer
+Fluorescence indices formatting/calculations- Calculating everything the same way as the old fluorometer
 HIX, BIX, FI, P/H, Protein-like, and humic-like
-Set the working directory to the EEM folder
-Then click run current chunk.
 
-```{r EEM}
+
+```{r EEMold}
 knitr::opts_chunk$set(echo = TRUE)
 
 #Make a list of all of the filenames in the folder
-filenames <- list.files(pattern="*.dat")
+filenames <- list.files(fp.eems, pattern="*.dat", full.names = TRUE)
 #Load in all of the files to one list
 allEEM <- sapply(filenames,FUN = read.delim,simplify = FALSE,USE.NAMES = TRUE)
 #Need to clean up the names in the list
 #Change filenames to remove the canned part we don't want
-filenames <- sub(" .*", "", filenames)
+filenames <- sub(" .*", "", basename(filenames))
 #Then sub the name onto the list
 names(allEEM) <- filenames
 
 
 #Need to load in the reference blank
-blank <- read.delim("EEMBaseline.txt")
+blank <- read.delim("EBlank1 (01) - Waterfall Plot Blank.dat")
 
 #Calculate the parameter from the blank that we need in Protein-like/Humic-like calculations
 blankem376_424 <- filter(blank, Wavelength >= 376 & Wavelength <= 424)
@@ -352,6 +355,14 @@ for(i in unique(filenames)){
   oneEEM <- oneEEM[-c(1),]
   #make Column 1 numeric too
   oneEEM$Sample...Blank <- as.numeric(oneEEM$Sample...Blank)
+  
+  #Correct for dilution, multiply EEM by dilution factor
+  #Pull out the dilution factor for that sample
+  onedilfac <- filter(dilfac, name == substring(i, 2))
+  onedilfac <- onedilfac$dilution
+  
+  #And multiply the EEM by it, excluding the column with the wavelength
+  oneEEM <- oneEEM %>% mutate(across(starts_with("X"), ~ . *onedilfac))
   
   #FI
   #Originally in McKnight et al 2001 excitation at 370 with ratio between 450nm:500nm (included what it is in our old python code)
