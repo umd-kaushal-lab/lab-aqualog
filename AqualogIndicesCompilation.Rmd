@@ -22,6 +22,7 @@ rm(list=ls())
 
 # call Libraries
 library(tidyverse)
+library(staRdom)
 
 ## # Box connection stuff (ignore)
 ## library(boxr)
@@ -455,5 +456,127 @@ write.csv(oldindices, file.path(fp.results,"FluoroOldIndices.csv"))
 
 #clean up the file names
 rm(allEEM, blank, blankem376_424, blanksum, x)
+
+```
+
+
+#Corrections and indices calculations with staRdom
+
+Inner filter effect correction, raman normalization, remove raman/rayleigh scattering lines, and calculate indices using staRdom
+Calculate all indices in staRdom (FI, HIX, BIX, and Coble's peaks)
+
+```{r EEMnew}
+
+#Read in EEMs - this will read in every file that's in that folder
+#Read in all the files that are in your EEM folder
+#It works for aqualog files
+eem_list <- eem_read(fp.eems.raw, recursive = TRUE, import_function = eem_csv) 
+
+#Read in absorbance in low resolution absorbance folder - these are the ones used for the inner filter effect
+#Then, will need to format to the same format as staRdom requires
+#Call in filenames
+filenames <- list.files(fp.lowa, pattern="*.dat", full.names = TRUE)
+# then call in spectra
+rawabs <- sapply(filenames, FUN = read.delim, simplify = FALSE, USE.NAMES = TRUE)
+# Need to clean up the names in the list
+# Change filenames to remove the canned part we don't want
+# then make these object names in rawabs
+filenames <- sub(" .*", "", basename(filenames))
+names(rawabs) <- filenames
+# Now, compile all of these columns into one dataframe
+# Remove all columns except for the absorbance
+rawabs <- lapply(rawabs, function(x) {select(x, -c("I1", "I1.dark", "R1", "R1dark", "XCorrect", "I1c", "R1c", "I1c.R1c", "Percent.T"))})
+#Make the Absorbance column name the sample name and remove extra columns
+for(i in unique(1:length(filenames))){
+  colnames <- c("Wavelength", filenames[i])
+  colnames(rawabs[[i]]) <- colnames
+}
+#Combine into one dataframe, joining by Wavelength column
+absorbance <- reduce(rawabs, left_join, by = "Wavelength")
+#Remove the first two rows, which just lists units and equations
+absorbance <- absorbance[-c(1:2),]
+#And make absorbance numeric
+absorbance[,] <- lapply(absorbance[,], as.numeric)
+#Change name of Wavelength so "W" is lowercase
+absorbance <- absorbance %>% rename_at('Wavelength', ~'wavelength')
+#Arrange so it's listed by wavelength from low to high
+absorbance <- arrange(absorbance, wavelength)
+
+
+#Trying to format absorbance data to be read in by staRdom
+#Read in absorbance in low resolution absorbance folder - these are the ones used for the inner filter effect
+#Need to convert to low resolution absorbance data to a format staRdom can understand
+#We need a csv for each sample where there's one wavelength column and one with the absorbance
+#Then, read in with staRdom
+#Call in filenames
+filenames <- list.files(fp.lowa, pattern="*.dat", full.names = TRUE)
+# then call in spectra
+
+
+
+#Make our metatable
+metatable <- system.file("extdata/metatable_dreem.csv",package = "staRdom") # path to example data, can be replaced by a path to your own data
+metaexample <- read.table(metatable, header = TRUE, sep = ",", dec = ".", row.names = 1) # load data
+
+#Or make a metatable
+eem_metatemplate(eem_list, absorbance) %>%
+  write.csv(file="metatable.csv", row.names = FALSE)
+#We will make something like this
+#Since the EEMs are a list, I think we can get everything to this point on our own
+#May need to pivot longer the EEMs
+problem <- eem_checkdata(eem_list,absorbance,meta,metacolumns = c("dilution"),error=FALSE)
+
+#Fix sample names
+eem_list <- eem_name_replace(eem_list,c("\\(FD3\\)"),c(""))
+
+#IFE correction
+eem_list <- eem_ife_correction(eem_list,absorbance, cuvl = 5)
+#Need absorbance to be in a dataframe where the first column is the wavelength from low to high, and each other column is the sample named with sample name
+#Need EEM in a list: sample = character of 1 with sample name; ex = double with excitation wavelengths; em = integer with emission wavelengths;
+#x = intensity (ours actually may not look that different)
+#Our cuvl = 1, 1cm cuvette
+
+#plot the EEMs
+eem_overview_plot(eem_list, spp=9, contour = TRUE)
+
+#Raman normalization:
+eem_list <- eem_raman_normalisation2(eem_list, blank = "blank")
+
+#Remove blanks from EEM and absorbance sample lists
+eem_list <- eem_extract(eem_list, c("nano", "miliq", "milliq", "mq", "blank"),ignore_case = TRUE)
+absorbance <- dplyr::select(absorbance, -matches("nano|miliq|milliq|mq|blank", ignore.case = TRUE))
+
+#Remove and interpolate scattering
+remove_scatter <- c(TRUE, TRUE, TRUE, TRUE)
+remove_scatter_width <- c(15,15,15,15)
+
+eem_list <- eem_rem_scat(eem_list, remove_scatter = remove_scatter, remove_scatter_width = remove_scatter_width)
+
+#Interpolate EEMs across scattering lines
+eem_list <- eem_interp(eem_list, cores = cores, type = 1, extend = FALSE)
+
+#Correction for dilution
+dil_data <- meta["dilution"]
+#Row name is sample name, the value in the one column is the dilution factor, could pull this from metadata sheet
+eem_list <- eem_dilution(eem_list,dil_data)
+
+#Smooth data for peak picking
+eem4peaks <- eem_smooth(eem_list, n = 4, cores = cores)
+
+#Summarize the samples and the corrections that have been done
+summary(eem_list)
+
+#And pull out all of the indices and peaks
+bix <- eem_biological_index(eem4peaks)
+coble_peaks <- eem_coble_peaks(eem4peaks)
+fi <- eem_fluorescence_index(eem4peaks)
+hix <- eem_humification_index(eem4peaks, scale = TRUE)
+
+indices_peaks <- bix %>%
+  full_join(coble_peaks, by = "sample") %>%
+  full_join(fi, by = "sample") %>%
+  full_join(hix, by = "sample")
+
+indices_peaks
 
 ```
