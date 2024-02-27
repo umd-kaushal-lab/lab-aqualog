@@ -474,7 +474,13 @@ eem_list <- eem_read(fp.eems.raw, recursive = TRUE, import_function = "aqualog")
 
 #remove all of the extra parts of the filenames - the "sample" part of each file in the list
 for(i in unique(1:length(eem_list))){
+  #remove the canned file info
   eem_list[[i]]$sample <- sub(" .*", "", basename(eem_list[[i]]$sample))
+  #remove the E
+  eem_list[[i]]$sample <- substring(eem_list[[i]]$sample, 2)
+  #remove any emission wavelengths > 800 (above range we can correct for with absorbance data) - would be good for Wes to check
+  eem_list[[i]]$em <- eem_list[[i]]$em[1:475]
+  eem_list[[i]]$x <- eem_list[[i]]$x[1:475,]
 }
 
 #Take an initial look at the EEMs commented out since it takes a while to load
@@ -485,12 +491,12 @@ for(i in unique(1:length(eem_list))){
 #Then, will need to format to the same format as staRdom requires
 #They need to be in csvs with only the wavlength and absorbance values, without column names
 #Call in filenames
-filenames <- list.files(fp.lowa, pattern="*.dat", full.names = TRUE)
+filenames <- list.files(fp.abs, pattern="*.dat", full.names = TRUE)
 
 #Folder for the csvs within lowres absorbance folder
-fp.lowa.csvs <- file.path(fp.lowa, "csvs")
-if(!dir.exists(fp.lowa.csvs)) {
-  dir.create(fp.lowa.csvs) 
+fp.abs.csvs <- file.path(fp.abs, "csvs")
+if(!dir.exists(fp.abs.csvs)) {
+  dir.create(fp.abs.csvs) 
 }
 
 #make sure it's not in scientific notation
@@ -505,15 +511,17 @@ for(i in unique((filenames))){
   oneabs <- oneabs[-c(1:2),]
   #pull out just the name
   name <- sub(" .*", "", basename(i))
+  #remove the A
+  name <- substring(name, 2)
   #Arrange so it's listed by wavelength from low to high
   oneabs <- arrange(oneabs, wavelength)
   #and save to csv, just want the wavelength and value, not named
-  write.table(oneabs, file.path(fp.lowa,paste("csvs/",name,".csv", sep = "")), sep = ",", row.names = F, col.names = F, quote = F)
+  write.table(oneabs, file.path(fp.abs,paste("csvs/",name,".csv", sep = "")), sep = ",", row.names = F, col.names = F, quote = F)
 }
 
 
 #Read in absorbance using staRdom
-absorbance_path <- fp.lowa.csvs
+absorbance_path <- fp.abs.csvs
 absorbance <- absorbance_read(absorbance_path) # load csv or txt tables in folder
 
 
@@ -521,7 +529,7 @@ absorbance <- absorbance_read(absorbance_path) # load csv or txt tables in folde
 metatable <- eem_metatemplate(eem_list, absorbance)
 
 #Test if everything is working
-problem <- eem_checkdata(eem_list,absorbance,meta,metacolumns = c("dilution"),error=FALSE)
+problem <- eem_checkdata(eem_list,absorbance,metatable,metacolumns = c("dilution"),error=FALSE)
 
 #Fix sample names
 eem_list <- eem_name_replace(eem_list,c("\\(FD3\\)"),c(""))
