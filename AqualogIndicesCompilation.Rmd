@@ -527,9 +527,19 @@ absorbance <- absorbance_read(absorbance_path) # load csv or txt tables in folde
 
 #Make our metatable
 metatable <- eem_metatemplate(eem_list, absorbance)
+#add a columns for dilutions
+#In part 1, we make dilfac - the value it needs to be multiplied by
+#first rename dilfac so it's the same as the metatable
+colnames(dilfac) <- c("sample", "dilution")
+metatable <- merge(metatable, dilfac, by = "sample")
 
+#print the table out to the results section
+write.csv(metatable, file.path(fp.results,"staRdomMetatable.csv"), row.names = F)
+
+meta <- read.table(paste(fp.results, "/staRdomMetatable.csv", sep = ""), 
+                   header = TRUE, sep = ",", dec = ".", row.names = 1) # load data
 #Test if everything is working
-problem <- eem_checkdata(eem_list,absorbance,metatable,metacolumns = c("dilution"),error=FALSE)
+problem <- eem_checkdata(eem_list,absorbance,meta,metacolumns = c("dilution"),error=FALSE)
 
 #Fix sample names
 eem_list <- eem_name_replace(eem_list,c("\\(FD3\\)"),c(""))
