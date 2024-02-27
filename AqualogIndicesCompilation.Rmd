@@ -53,15 +53,23 @@ if(!dir.exists(fp.results)) {
 #List all of the files we'll read in
 filenames <- list.files(fp.data, pattern="*.dat")
 
-# seperate all of the absorbance data into "Absorbance" folder, all EEMS data into an "EEMS" folder, and an all data folder "AbsEEMS"
+# seperate all of the absorbance data into "Absorbance" folder, all interpolated EEMS data into an "EEMS_IN" folder, 
+# all non-interpolated EEMS into "EEMS_RAW", and an all data folder "all"
 fp.abs <- file.path(fp.data, "Absorbance_highres")
 if(!dir.exists(fp.abs)) {
   dir.create(fp.abs) 
 }
 
-fp.eems <- file.path(fp.data, "EEMS")
-if(!dir.exists(fp.eems)) {
-  dir.create(fp.eems) 
+#folder for interpolated EEMS
+fp.eems.in <- file.path(fp.data, "EEMS_IN")
+if(!dir.exists(fp.eems.in)) {
+  dir.create(fp.eems.in) 
+}
+
+#folder for not interpolated eems
+fp.eems.raw <- file.path(fp.data, "EEMS_RAW")
+if(!dir.exists(fp.eems.raw)) {
+  dir.create(fp.eems.raw) 
 }
 
 # folder for low res abs from eems
@@ -82,7 +90,8 @@ for(fn in filenames) {
 
   # set destination file path for abs and EEMS, and all
   fda <- file.path(fp.abs, fn)
-  fde <- file.path(fp.eems, fn)
+  fde.in <- file.path(fp.eems.in, fn)
+  fde.raw <- file.path(fp.eems.raw, fn)
   fdlowa <- file.path(fp.lowa, fn)
   fdall <- file.path(fp.all, fn)
   
@@ -102,9 +111,15 @@ for(fn in filenames) {
     file.copy(fp, fdall)
   }
 
-  # copy EEMS data into EEMS folder
+  # copy EEMS_IN data into EEMS_IN folder
   if(grepl("Processed Graph_ IN", fn)) {
-    file.copy(fp, fde)
+    file.copy(fp, fde.in)
+    file.copy(fp, fdall)
+  }
+  
+  # copy EEMS_RAW data into EEMS_RAW folder
+  if(grepl("Sample - Blank Waterfall Plot", fn)) {
+    file.copy(fp, fde.raw)
     file.copy(fp, fdall)
   }
 }
@@ -313,7 +328,7 @@ HIX, BIX, FI, P/H, Protein-like, and humic-like
 knitr::opts_chunk$set(echo = TRUE)
 
 #Make a list of all of the filenames in the folder
-filenames <- list.files(fp.eems, pattern="*.dat", full.names = TRUE)
+filenames <- list.files(fp.eems.in, pattern="*.dat", full.names = TRUE)
 #Load in all of the files to one list
 allEEM <- sapply(filenames,FUN = read.delim,simplify = FALSE,USE.NAMES = TRUE)
 #Need to clean up the names in the list
