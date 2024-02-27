@@ -470,60 +470,57 @@ Calculate all indices in staRdom (FI, HIX, BIX, and Coble's peaks)
 #Read in EEMs - this will read in every file that's in that folder
 #Read in all the files that are in your EEM folder
 #It works for aqualog files
-eem_list <- eem_read(fp.eems.raw, recursive = TRUE, import_function = eem_csv) 
+eem_list <- eem_read(fp.eems.raw, recursive = TRUE, import_function = "aqualog") 
+
+#remove all of the extra parts of the filenames - the "sample" part of each file in the list
+for(i in unique(1:length(eem_list))){
+  eem_list[[i]]$sample <- sub(" .*", "", basename(eem_list[[i]]$sample))
+}
+
+#Take an initial look at the EEMs commented out since it takes a while to load
+#eem_overview_plot(eem_list, spp=9, contour = TRUE)
+
 
 #Read in absorbance in low resolution absorbance folder - these are the ones used for the inner filter effect
 #Then, will need to format to the same format as staRdom requires
+#They need to be in csvs with only the wavlength and absorbance values, without column names
 #Call in filenames
 filenames <- list.files(fp.lowa, pattern="*.dat", full.names = TRUE)
-# then call in spectra
-rawabs <- sapply(filenames, FUN = read.delim, simplify = FALSE, USE.NAMES = TRUE)
-# Need to clean up the names in the list
-# Change filenames to remove the canned part we don't want
-# then make these object names in rawabs
-filenames <- sub(" .*", "", basename(filenames))
-names(rawabs) <- filenames
-# Now, compile all of these columns into one dataframe
-# Remove all columns except for the absorbance
-rawabs <- lapply(rawabs, function(x) {select(x, -c("I1", "I1.dark", "R1", "R1dark", "XCorrect", "I1c", "R1c", "I1c.R1c", "Percent.T"))})
-#Make the Absorbance column name the sample name and remove extra columns
-for(i in unique(1:length(filenames))){
-  colnames <- c("Wavelength", filenames[i])
-  colnames(rawabs[[i]]) <- colnames
+
+#Folder for the csvs within lowres absorbance folder
+fp.lowa.csvs <- file.path(fp.lowa, "csvs")
+if(!dir.exists(fp.lowa.csvs)) {
+  dir.create(fp.lowa.csvs) 
 }
-#Combine into one dataframe, joining by Wavelength column
-absorbance <- reduce(rawabs, left_join, by = "Wavelength")
-#Remove the first two rows, which just lists units and equations
-absorbance <- absorbance[-c(1:2),]
-#And make absorbance numeric
-absorbance[,] <- lapply(absorbance[,], as.numeric)
-#Change name of Wavelength so "W" is lowercase
-absorbance <- absorbance %>% rename_at('Wavelength', ~'wavelength')
-#Arrange so it's listed by wavelength from low to high
-absorbance <- arrange(absorbance, wavelength)
+
+#make sure it's not in scientific notation
+options(scipen = 999)
+#Write each absorbance spectra as a csv with only wavelength and absorbance
+for(i in unique((filenames))){
+  #read in each absorbance
+  oneabs <- read.delim(i)
+  #remove extra columns from each absorbance and rename appropriately
+  oneabs <- select(oneabs, wavelength = "Wavelength", absorbance = "Abs")
+  #remove the rows with units
+  oneabs <- oneabs[-c(1:2),]
+  #pull out just the name
+  name <- sub(" .*", "", basename(i))
+  #Arrange so it's listed by wavelength from low to high
+  oneabs <- arrange(oneabs, wavelength)
+  #and save to csv, just want the wavelength and value, not named
+  write.table(oneabs, file.path(fp.lowa,paste("csvs/",name,".csv", sep = "")), sep = ",", row.names = F, col.names = F, quote = F)
+}
 
 
-#Trying to format absorbance data to be read in by staRdom
-#Read in absorbance in low resolution absorbance folder - these are the ones used for the inner filter effect
-#Need to convert to low resolution absorbance data to a format staRdom can understand
-#We need a csv for each sample where there's one wavelength column and one with the absorbance
-#Then, read in with staRdom
-#Call in filenames
-filenames <- list.files(fp.lowa, pattern="*.dat", full.names = TRUE)
-# then call in spectra
-
+#Read in absorbance using staRdom
+absorbance_path <- fp.lowa.csvs
+absorbance <- absorbance_read(absorbance_path) # load csv or txt tables in folder
 
 
 #Make our metatable
-metatable <- system.file("extdata/metatable_dreem.csv",package = "staRdom") # path to example data, can be replaced by a path to your own data
-metaexample <- read.table(metatable, header = TRUE, sep = ",", dec = ".", row.names = 1) # load data
+metatable <- eem_metatemplate(eem_list, absorbance)
 
-#Or make a metatable
-eem_metatemplate(eem_list, absorbance) %>%
-  write.csv(file="metatable.csv", row.names = FALSE)
-#We will make something like this
-#Since the EEMs are a list, I think we can get everything to this point on our own
-#May need to pivot longer the EEMs
+#Test if everything is working
 problem <- eem_checkdata(eem_list,absorbance,meta,metacolumns = c("dilution"),error=FALSE)
 
 #Fix sample names
