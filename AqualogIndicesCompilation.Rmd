@@ -42,7 +42,7 @@ Create a folder for the high resolution absorbance data (which we use), the EEMs
 ```{r fileOrg}
 # connect to raw data filepath
 #This pull out the working directory, can add ", "data"" and it specifies a folder within the WD
-fp.data <- file.path("C:/Users/Public/Documents/Jobin Yvon/Data/Shelton/20230728_SAS_RoutineBES_07072023_07282023/")
+fp.data <- file.path("C:/Users/shelts3/Dropbox/GradSchool/Research/MethodologiesGuidesAnalysisCode/lab-aqualog/20231030_ExampleRun_SASRoutineMonitoring")
 
 # the final run results will be saved in:
 fp.results <- file.path(fp.data, "results")
