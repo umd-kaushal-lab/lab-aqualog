@@ -79,6 +79,12 @@ if(!dir.exists(fp.lowa)) {
   dir.create(fp.lowa) 
 }
 
+# folder for blanks for raman normalization
+fp.raman <- file.path(fp.data, "BlanksforRaman")
+if(!dir.exists(fp.raman)) {
+  dir.create(fp.raman) 
+}
+
 # folder for combined abs and eems data
 fp.all <- file.path(fp.data, "all")
 if(!dir.exists(fp.all)) {
@@ -94,6 +100,7 @@ for(fn in filenames) {
   fde.in <- file.path(fp.eems.in, fn)
   fde.raw <- file.path(fp.eems.raw, fn)
   fdlowa <- file.path(fp.lowa, fn)
+  fdraman <- file.path(fp.raman, fn)
   fdall <- file.path(fp.all, fn)
   
   # copy absorbance data into absorbance folder
@@ -123,7 +130,15 @@ for(fn in filenames) {
     file.copy(fp, fde.raw)
     file.copy(fp, fdall)
   }
-}
+  
+  # copy first 3 blanks to a separate folder for Raman normalization
+  if(grepl("Waterfall Plot Sample", fn)) {
+    if(grepl("lank1", fn) | grepl("lank2", fn) | grepl("lank3", fn)){
+    file.copy(fp, fdraman)
+    file.copy(fp, fdall)
+  }}
+  
+} #end for loop
 
 ```
 
@@ -547,19 +562,38 @@ problem <- eem_checkdata(eem_list,absorbance,meta,metacolumns = c("dilution"),er
 #Instrument corrections are automatically applied in Aqualog software
 #EEM blank subtraction occurs in Aqualog software
 
-
 #IFE correction
-eem_list <- eem_ife_correction(eem_list,absorbance, cuvl = 5)
-#Need absorbance to be in a dataframe where the first column is the wavelength from low to high, and each other column is the sample named with sample name
-#Need EEM in a list: sample = character of 1 with sample name; ex = double with excitation wavelengths; em = integer with emission wavelengths;
-#x = intensity (ours actually may not look that different)
+eem_list <- eem_ife_correction(eem_list,absorbance, cuvl = 1)
 #Our cuvl = 1, 1cm cuvette
+
+#Raman normalization:
+#Divide by the Raman area from the blanks
+#Need to pull out the blanks and calculate the Raman area - we also have this from the run log? not sure of the best approach here...
+#pull in the Raman files
+
+#First read in the not blank-subtracted EEMs for blanks 1-3 from the run
+eem_blank <- eem_read(fp.raman, recursive = TRUE, import_function = "aqualog") 
+
+#remove all of the extra parts of the filenames - the "sample" part of each file in the list
+for(i in unique(1:length(eem_blank))){
+  #remove the canned file info
+  eem_blank[[i]]$sample <- sub(" .*", "", basename(eem_blank[[i]]$sample))
+  #remove the E
+  eem_blank[[i]]$sample <- substring(eem_blank[[i]]$sample, 2)
+  #remove any emission wavelengths > 800 (above range we can correct for with absorbance data) - would be good for Wes to check
+  eem_blank[[i]]$em <- eem_blank[[i]]$em[1:306]
+  eem_blank[[i]]$x <- eem_blank[[i]]$x[1:306,]
+}
+
+#Calculate raman area same as staRdom
+#then divide our values by that number
+
+eem_list <- eem_raman_normalisation(eem_list, eem_blank)
 
 #plot the EEMs
 eem_overview_plot(eem_list, spp=9, contour = TRUE)
 
-#Raman normalization:
-eem_list <- eem_raman_normalisation2(eem_list, blank = "blank")
+
 
 #Remove blanks from EEM and absorbance sample lists
 eem_list <- eem_extract(eem_list, c("nano", "miliq", "milliq", "mq", "blank"),ignore_case = TRUE)
