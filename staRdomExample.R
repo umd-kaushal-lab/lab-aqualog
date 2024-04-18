@@ -34,6 +34,27 @@ eem_metatemplate(eem_list, absorbance) %>%
 problem <- eem_checkdata(eem_list,absorbance,meta,metacolumns = c("dilution"),error=FALSE)
 
 
+#change sample names
+eem_list <- eem_name_replace(eem_list,c("\\(FD3\\)"),c(""))
+
+#absorbance baseline correction
+absorbance <- abs_blcor(absorbance,wlrange = c(680,700))
+
+#spectral correction
+absorbance <- abs_blcor(absorbance,wlrange = c(680,700))
+
+#blank subtraction
+# extending and interpolation data
+eem_list <- eem_extend2largest(eem_list, interpolation = 1, extend = FALSE)
+
+# blank subtraction
+eem_list <- eem_remove_blank(eem_list)
+
+#IFE correction
+eem_list <- eem_ife_correction(eem_list,absorbance, cuvl = 5)
+
+#Raman normalization
+eem_list <- eem_raman_normalisation2(eem_list, blank = "blank")
 
 
 #Load all the absorbance data into one dataframe - not in correct format for metatable
