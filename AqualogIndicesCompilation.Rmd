@@ -343,16 +343,12 @@ HIX, BIX, FI, P/H, Protein-like, and humic-like
 ```{r EEMold}
 knitr::opts_chunk$set(echo = TRUE)
 
+#Note: should be sure to cite EEMr for this one - didn't use any functions, but referenced it for the interpolation
+
 #Make a list of all of the filenames in the folder
 filenames <- list.files(fp.eems.in, pattern="*.dat", full.names = TRUE)
-#Load in all of the files to one list
-allEEM <- sapply(filenames,FUN = read.delim,simplify = FALSE,USE.NAMES = TRUE)
-#Need to clean up the names in the list
 #Change filenames to remove the canned part we don't want
 filenames <- sub(" .*", "", basename(filenames))
-#Then sub the name onto the list
-names(allEEM) <- filenames
-
 
 #Need to load in the reference blank
 blank <- read.delim(file.path(fp.data, "EBlank1 (01) - Waterfall Plot Sample.dat"))
@@ -360,6 +356,20 @@ blank <- read.delim(file.path(fp.data, "EBlank1 (01) - Waterfall Plot Sample.dat
 #Calculate the parameter from the blank that we need in Protein-like/Humic-like calculations
 blankem376_424 <- filter(blank, Wavelength >= 376 & Wavelength <= 424)
 blanksum <- sum(blankem376_424$X350)
+
+#Read in EEMs
+eem_list <- eem_read(fp.eems.raw, recursive = TRUE, import_function = "aqualog") 
+
+#remove all of the extra parts of the filenames - the "sample" part of each file in the list
+for(i in unique(1:length(eem_list))){
+  #remove the canned file info
+  eem_list[[i]]$sample <- sub(" .*", "", basename(eem_list[[i]]$sample))
+  #remove the E
+  eem_list[[i]]$sample <- substring(eem_list[[i]]$sample, 2)
+  #remove any emission wavelengths > 800 (above range we can correct for with absorbance data) - would be good for Wes to check
+  eem_list[[i]]$em <- eem_list[[i]]$em[1:306]
+  eem_list[[i]]$x <- eem_list[[i]]$x[1:306,]
+}
 
 #For this code, at this point we will want to do the calculations for each csv and then compile it into one dataframe
 #Now we'll set up a loop to do the calculations on each EEM individually and generate one dataframe of results
@@ -380,74 +390,75 @@ colnames(row) = columns
 
 
 
-for(i in unique(filenames)){
+for(i in 1:length(eem_list)){
  
   #Pull out a single EEM
-  oneEEM <- allEEM[[i]]
-  
-  #Transform the EEM, clean up the data
-  #we need to remove the "nm" row 
-  oneEEM <- oneEEM[-c(1),]
-  #make Column 1 numeric too
-  oneEEM$Sample...Blank <- as.numeric(oneEEM$Sample...Blank)
+  oneEEM <- eem_list[[i]]
+  sample <- oneEEM$sample
   
   #Correct for dilution, multiply EEM by dilution factor
   #Pull out the dilution factor for that sample
-  onedilfac <- filter(dilfac, name == substring(i, 2))
+  onedilfac <- filter(dilfac, name == sample)
   onedilfac <- onedilfac$dilution
   
   #And multiply the EEM by it, excluding the column with the wavelength
-  oneEEM <- oneEEM %>% mutate(across(starts_with("X"), ~ . *onedilfac))
+  oneEEM$x <- oneEEM$x * onedilfac
   
   #FI
   #Originally in McKnight et al 2001 excitation at 370 with ratio between 450nm:500nm (included what it is in our old python code)
   #Note, in the new EEMS this should be updated as Cory et al 2010
-  em450 <- filter(oneEEM, Sample...Blank == 448)
-  em500 <- filter(oneEEM, Sample...Blank == 498)
-  oldFI <- em450$X370/em500$X370
+  em450 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 370, 448)
+  em500 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 370, 498)
+  oldFI <- em450/em500
   rm(em450, em500)
   
   #BIX
   #For excitation at 310 nm, ratio of emission 380nm/430nm (USGS protocol)
-  em380 <- filter(oneEEM, Sample...Blank == 380)
-  em430 <- filter(oneEEM, Sample...Blank == 430)
-  oldBIX <- em380$X310/em430$X310
+  em380 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 310, 380)
+  em430 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 310, 430)
+  oldBIX <- em380/em430
   rm(em380, em430)
   
   #Now calculate HIX, this is based on Ohno, 2002; Zsolnay et al., 1999; and listed in USGS Aqualog Protocol
   #Excitation wavelength of 254 -> we just need this column, will use 255
-  #sum 435 to 480, sum 300 to 345
-  em435_480 <- filter(oneEEM, Sample...Blank >= 435 & Sample...Blank <= 480)
-  em300_345 <- filter(oneEEM, Sample...Blank >= 300 & Sample...Blank <= 345)
-  oldHIX <- sum(em435_480$X255)/(sum(em435_480$X255)+sum(em300_345$X255))
-  rm(em435_480,em300_345)
+  #sum 435 to 480, sum 300 to 345 - make to sequences with these values
+  seq_435_480 <- seq(from = 435, to = 480, by = 1)
+  seq_300_345 <- seq(from = 300, to = 345, by = 1)
+  #and make a list of the appropriate length for 255nm
+  ex_255 <- rep(255, length(seq_300_345))
+  #And interpolate for each emission, and sum across
+  em435_480 <- sum(pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, ex_255, seq_435_480), na.rm = TRUE)
+  em300_345 <- sum(pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, ex_255, seq_300_345), na.rm = TRUE)
+  #And actually calculate HIX
+  oldHIX <- em435_480/(em435_480+em300_345)
+  rm(em435_480,em300_345, seq_435_480, seq_300_345)
   
   
   #P/H
   #ratio between 340 nm emission @ 275 nm excitation: 480 nm emission @ 350 nm excitation (old python) 
   #NEED TO FIND SOURCE
-  em340 <- filter(oneEEM, Sample...Blank == 340)
-  em480 <- filter(oneEEM, Sample...Blank == 480)
-  PH <- em340$X275/em480$X350
+  em340 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 275, 340)
+  em480 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 350, 480)
+  PH <- em340/em480
 
   
   #Protein-like
   #Source: Old python code
   #(ex274/em340)/(sum of emission wavelengths between 376 nm to 424 nm for excitation 350 nm for the BLANK) (old python) 
-  pl <- em340$X275/blanksum
+  pl <- em340/blanksum
   
   
   #Humic-like
   #Source: old python code
   #(ex350/em480)/(sum of emission wavelengths between 376 nm to 424 nm for excitation 350 nm for the BLANK) (old python) 
-  hl <- em480$X350/blanksum
+  hl <- em480/blanksum
   
   
   rm(em340, em480)
   
   #Put all these values into the dataframe for all the calculations
   #Put all of these values into the row
-  row$sample <- i
+  row$sample <- sample
   row$oldFI <- oldFI
   row$oldBIX <- oldBIX
   row$oldHIX <- oldHIX
@@ -470,7 +481,7 @@ rm(oneEEM, row, oldBIX, columns, oldFI, oldHIX, filenames, hl, i, PH, pl, onedil
 #write.csv(oldindices, file.path(fp.results,"FluoroOldIndices.csv"))
 
 #clean up the file names
-rm(allEEM, blank, blankem376_424, blanksum, x)
+rm(blank, blankem376_424, blanksum, x)
 
 ```
 
