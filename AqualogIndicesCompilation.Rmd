@@ -22,6 +22,7 @@ rm(list=ls())
 
 # call Libraries
 library(tidyverse)
+library(staRdom)
 
 ## # Box connection stuff (ignore)
 ## library(boxr)
@@ -42,7 +43,7 @@ Create a folder for the high resolution absorbance data (which we use), the EEMs
 ```{r fileOrg}
 # connect to raw data filepath
 #This pull out the working directory, can add ", "data"" and it specifies a folder within the WD
-fp.data <- file.path("C:/Users/Public/Documents/Jobin Yvon/Data/Shelton/20230728_SAS_RoutineBES_07072023_07282023/")
+fp.data <- file.path("C:/Users/shelts3/Dropbox/GradSchool/Research/MethodologiesGuidesAnalysisCode/lab-aqualog/20231030_ExampleRun_SASRoutineMonitoring")
 
 # the final run results will be saved in:
 fp.results <- file.path(fp.data, "results")
@@ -53,21 +54,35 @@ if(!dir.exists(fp.results)) {
 #List all of the files we'll read in
 filenames <- list.files(fp.data, pattern="*.dat")
 
-# seperate all of the absorbance data into "Absorbance" folder, all EEMS data into an "EEMS" folder, and an all data folder "AbsEEMS"
+# seperate all of the absorbance data into "Absorbance" folder, all interpolated EEMS data into an "EEMS_IN" folder, 
+# all non-interpolated EEMS into "EEMS_RAW", and an all data folder "all"
 fp.abs <- file.path(fp.data, "Absorbance_highres")
 if(!dir.exists(fp.abs)) {
   dir.create(fp.abs) 
 }
 
-fp.eems <- file.path(fp.data, "EEMS")
-if(!dir.exists(fp.eems)) {
-  dir.create(fp.eems) 
+#folder for interpolated EEMS
+fp.eems.in <- file.path(fp.data, "EEMS_IN")
+if(!dir.exists(fp.eems.in)) {
+  dir.create(fp.eems.in) 
+}
+
+#folder for not interpolated eems
+fp.eems.raw <- file.path(fp.data, "EEMS_RAW")
+if(!dir.exists(fp.eems.raw)) {
+  dir.create(fp.eems.raw) 
 }
 
 # folder for low res abs from eems
 fp.lowa <- file.path(fp.data, "Absorbance_lowres")
 if(!dir.exists(fp.lowa)) {
   dir.create(fp.lowa) 
+}
+
+# folder for blanks for raman normalization
+fp.raman <- file.path(fp.data, "BlanksforRaman")
+if(!dir.exists(fp.raman)) {
+  dir.create(fp.raman) 
 }
 
 # folder for combined abs and eems data
@@ -82,8 +97,10 @@ for(fn in filenames) {
 
   # set destination file path for abs and EEMS, and all
   fda <- file.path(fp.abs, fn)
-  fde <- file.path(fp.eems, fn)
+  fde.in <- file.path(fp.eems.in, fn)
+  fde.raw <- file.path(fp.eems.raw, fn)
   fdlowa <- file.path(fp.lowa, fn)
+  fdraman <- file.path(fp.raman, fn)
   fdall <- file.path(fp.all, fn)
   
   # copy absorbance data into absorbance folder
@@ -102,12 +119,26 @@ for(fn in filenames) {
     file.copy(fp, fdall)
   }
 
-  # copy EEMS data into EEMS folder
+  # copy EEMS_IN data into EEMS_IN folder
   if(grepl("Processed Graph_ IN", fn)) {
-    file.copy(fp, fde)
+    file.copy(fp, fde.in)
     file.copy(fp, fdall)
   }
-}
+  
+  # copy EEMS_RAW data into EEMS_RAW folder
+  if(grepl("Sample - Blank Waterfall Plot", fn)) {
+    file.copy(fp, fde.raw)
+    file.copy(fp, fdall)
+  }
+  
+  # copy first 3 blanks to a separate folder for Raman normalization
+  if(grepl("Waterfall Plot Sample", fn)) {
+    if(grepl("lank1", fn) | grepl("lank2", fn) | grepl("lank3", fn)){
+    file.copy(fp, fdraman)
+    file.copy(fp, fdall)
+  }}
+  
+} #end for loop
 
 ```
 
@@ -188,7 +219,7 @@ abs.norm <- function(x){
 spectra[,2:602] <- lapply(spectra[,2:602], abs.norm)
 
 #set up an empty dataframe with properly named columns
-columns <- c("name","decadic.a254","S275_295","S350_400","SRatio") 
+columns <- c("sample","decadic.a254","S275_295","S350_400","SRatio") 
 
 # pass this vector length to ncol parameter
 # and nrow with 0
@@ -209,7 +240,7 @@ for(i in unique(spectra$filenames)){
   #Pull out decadic a254
   decadic.a254 <- (obs$X254)/2.303
   #Pull out the name
-  name <- obs$filenames
+  sample <- obs$filenames
   #Leave out the filenames column
   obs <- obs[,-c(1)]
   
@@ -217,9 +248,9 @@ for(i in unique(spectra$filenames)){
   #This is the preferred method in Helms et al 2008, but this could also be done by 
   #fitting an exponential decay equation; there was less than a 1% difference between methods
   #First, use an if/else statement to put in NA for any blanks - used "lank" here so capital/lowercase B is okay
-    if(grepl("lank", name)) {
+    if(grepl("lank", sample)) {
       #Put in NA for all of the spectral slope calculations
-      row[,1] <- name
+      row[,1] <- sample
       row[,2] <- decadic.a254
       row[,3] <- NA
       row[,4] <- NA
@@ -254,7 +285,7 @@ for(i in unique(spectra$filenames)){
   
   #Put all these values into the dataframe for all the calculations
   #Put all of these values into a row
-  row[,1] <- name
+  row[,1] <- sample
   row[,2] <- decadic.a254
   row[,3] <- S275_295
   row[,4] <- S350_400
@@ -265,7 +296,7 @@ for(i in unique(spectra$filenames)){
 }
 
 #Clean it up so you just have calcs, spectra, and what we need for EEMs section
-rm(l275_295, l350_400, log, obs, regl275_295, regl350_400, row, decadic.a254, columns, i, name, S275_295, S350_400, SRatio, abs.norm)
+rm(l275_295, l350_400, log, obs, regl275_295, regl350_400, row, decadic.a254, columns, i, sample, S275_295, S350_400, SRatio, abs.norm)
 
 #Bind calcs and spectra together
 compilation <- cbind(calcs, spectra)
@@ -296,10 +327,10 @@ for(i in 1:nrow(compilation)) {
 #CHANGE WORKING DIRECTORY TO WHEREVER YOU WANT TO SAVE THE FILE
 #Save File
 #UPDATE FILE NAME AS NEEDED
-write.csv(compilation, file.path(fp.results, "AbsorbanceCompilation.csv"))
+#write.csv(compilation, file.path(fp.results, "AbsorbanceCompilation.csv"))
 
 #Now make a dilution factor dataframe
-dilfac <- data.frame(name = compilation$name, dilution = compilation$dilution)
+dilfac <- data.frame(name = compilation$sample, dilution = compilation$dilution)
 #And remove the A
 dilfac$name <- substring(dilfac$name, 2)
 ```
@@ -312,30 +343,40 @@ HIX, BIX, FI, P/H, Protein-like, and humic-like
 ```{r EEMold}
 knitr::opts_chunk$set(echo = TRUE)
 
+#Note: should be sure to cite EEMr for this one - didn't use any functions, but referenced it for the interpolation
+
 #Make a list of all of the filenames in the folder
-filenames <- list.files(fp.eems, pattern="*.dat", full.names = TRUE)
-#Load in all of the files to one list
-allEEM <- sapply(filenames,FUN = read.delim,simplify = FALSE,USE.NAMES = TRUE)
-#Need to clean up the names in the list
+filenames <- list.files(fp.eems.in, pattern="*.dat", full.names = TRUE)
 #Change filenames to remove the canned part we don't want
 filenames <- sub(" .*", "", basename(filenames))
-#Then sub the name onto the list
-names(allEEM) <- filenames
-
 
 #Need to load in the reference blank
-blank <- read.delim(file.path(fp.data, "EBlank1 (01) - Waterfall Plot Blank.dat"))
+blank <- read.delim(file.path(fp.data, "EBlank1 (01) - Waterfall Plot Sample.dat"))
 
 #Calculate the parameter from the blank that we need in Protein-like/Humic-like calculations
 blankem376_424 <- filter(blank, Wavelength >= 376 & Wavelength <= 424)
 blanksum <- sum(blankem376_424$X350)
+
+#Read in EEMs
+eem_list <- eem_read(fp.eems.raw, recursive = TRUE, import_function = "aqualog") 
+
+#remove all of the extra parts of the filenames - the "sample" part of each file in the list
+for(i in unique(1:length(eem_list))){
+  #remove the canned file info
+  eem_list[[i]]$sample <- sub(" .*", "", basename(eem_list[[i]]$sample))
+  #remove the E
+  eem_list[[i]]$sample <- substring(eem_list[[i]]$sample, 2)
+  #remove any emission wavelengths > 800 (above range we can correct for with absorbance data) - would be good for Wes to check
+  eem_list[[i]]$em <- eem_list[[i]]$em[1:306]
+  eem_list[[i]]$x <- eem_list[[i]]$x[1:306,]
+}
 
 #For this code, at this point we will want to do the calculations for each csv and then compile it into one dataframe
 #Now we'll set up a loop to do the calculations on each EEM individually and generate one dataframe of results
 #We're going to need to be careful here keeping track of names, since names don't populate in the list
 
 #set up an empty dataframes with properly named columns
-columns <- c("Sample","oldFI","oldBIX","oldHIX","P/H", "Protein-like", "Humic-like") 
+columns <- c("sample","oldFI","oldBIX","oldHIX","P/H", "Protein-like", "Humic-like") 
 # pass this vector length to ncol parameter
 # and nrow with 0
 oldindices <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
@@ -349,74 +390,75 @@ colnames(row) = columns
 
 
 
-for(i in unique(filenames)){
+for(i in 1:length(eem_list)){
  
   #Pull out a single EEM
-  oneEEM <- allEEM[[i]]
-  
-  #Transform the EEM, clean up the data
-  #we need to remove the "nm" row 
-  oneEEM <- oneEEM[-c(1),]
-  #make Column 1 numeric too
-  oneEEM$Sample...Blank <- as.numeric(oneEEM$Sample...Blank)
+  oneEEM <- eem_list[[i]]
+  sample <- oneEEM$sample
   
   #Correct for dilution, multiply EEM by dilution factor
   #Pull out the dilution factor for that sample
-  onedilfac <- filter(dilfac, name == substring(i, 2))
+  onedilfac <- filter(dilfac, name == sample)
   onedilfac <- onedilfac$dilution
   
   #And multiply the EEM by it, excluding the column with the wavelength
-  oneEEM <- oneEEM %>% mutate(across(starts_with("X"), ~ . *onedilfac))
+  oneEEM$x <- oneEEM$x * onedilfac
   
   #FI
   #Originally in McKnight et al 2001 excitation at 370 with ratio between 450nm:500nm (included what it is in our old python code)
   #Note, in the new EEMS this should be updated as Cory et al 2010
-  em450 <- filter(oneEEM, Sample...Blank == 448)
-  em500 <- filter(oneEEM, Sample...Blank == 498)
-  oldFI <- em450$X370/em500$X370
+  em450 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 370, 448)
+  em500 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 370, 498)
+  oldFI <- em450/em500
   rm(em450, em500)
   
   #BIX
   #For excitation at 310 nm, ratio of emission 380nm/430nm (USGS protocol)
-  em380 <- filter(oneEEM, Sample...Blank == 380)
-  em430 <- filter(oneEEM, Sample...Blank == 430)
-  oldBIX <- em380$X310/em430$X310
+  em380 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 310, 380)
+  em430 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 310, 430)
+  oldBIX <- em380/em430
   rm(em380, em430)
   
   #Now calculate HIX, this is based on Ohno, 2002; Zsolnay et al., 1999; and listed in USGS Aqualog Protocol
   #Excitation wavelength of 254 -> we just need this column, will use 255
-  #sum 435 to 480, sum 300 to 345
-  em435_480 <- filter(oneEEM, Sample...Blank >= 435 & Sample...Blank <= 480)
-  em300_345 <- filter(oneEEM, Sample...Blank >= 300 & Sample...Blank <= 345)
-  oldHIX <- sum(em435_480$X255)/(sum(em435_480$X255)+sum(em300_345$X255))
-  rm(em435_480,em300_345)
+  #sum 435 to 480, sum 300 to 345 - make to sequences with these values
+  seq_435_480 <- seq(from = 435, to = 480, by = 1)
+  seq_300_345 <- seq(from = 300, to = 345, by = 1)
+  #and make a list of the appropriate length for 255nm
+  ex_255 <- rep(255, length(seq_300_345))
+  #And interpolate for each emission, and sum across
+  em435_480 <- sum(pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, ex_255, seq_435_480), na.rm = TRUE)
+  em300_345 <- sum(pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, ex_255, seq_300_345), na.rm = TRUE)
+  #And actually calculate HIX
+  oldHIX <- em435_480/(em435_480+em300_345)
+  rm(em435_480,em300_345, seq_435_480, seq_300_345)
   
   
   #P/H
   #ratio between 340 nm emission @ 275 nm excitation: 480 nm emission @ 350 nm excitation (old python) 
   #NEED TO FIND SOURCE
-  em340 <- filter(oneEEM, Sample...Blank == 340)
-  em480 <- filter(oneEEM, Sample...Blank == 480)
-  PH <- em340$X275/em480$X350
+  em340 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 275, 340)
+  em480 <- pracma::interp2(oneEEM$ex, oneEEM$em, oneEEM$x, 350, 480)
+  PH <- em340/em480
 
   
   #Protein-like
   #Source: Old python code
   #(ex274/em340)/(sum of emission wavelengths between 376 nm to 424 nm for excitation 350 nm for the BLANK) (old python) 
-  pl <- em340$X275/blanksum
+  pl <- em340/blanksum
   
   
   #Humic-like
   #Source: old python code
   #(ex350/em480)/(sum of emission wavelengths between 376 nm to 424 nm for excitation 350 nm for the BLANK) (old python) 
-  hl <- em480$X350/blanksum
+  hl <- em480/blanksum
   
   
   rm(em340, em480)
   
   #Put all these values into the dataframe for all the calculations
   #Put all of these values into the row
-  row$Sample <- i
+  row$sample <- sample
   row$oldFI <- oldFI
   row$oldBIX <- oldBIX
   row$oldHIX <- oldHIX
@@ -436,9 +478,185 @@ rm(oneEEM, row, oldBIX, columns, oldFI, oldHIX, filenames, hl, i, PH, pl, onedil
 #CHANGE WORKING DIRECTORY TO WHEREVER YOU WANT TO SAVE THE FILE
 #Save File
 #UPDATE FILE NAME AS NEEDED
-write.csv(oldindices, file.path(fp.results,"FluoroOldIndices.csv"))
+#write.csv(oldindices, file.path(fp.results,"FluoroOldIndices.csv"))
 
 #clean up the file names
-rm(allEEM, blank, blankem376_424, blanksum, x)
+rm(blank, blankem376_424, blanksum, x)
 
+```
+
+
+#Corrections and indices calculations with staRdom
+
+Inner filter effect correction, raman normalization, remove raman/rayleigh scattering lines, and calculate indices using staRdom
+Calculate all indices in staRdom (FI, HIX, BIX, and Coble's peaks)
+
+Information on package is available here: https://cran.r-project.org/web//packages/staRdom/vignettes/PARAFAC_analysis_of_EEM.html
+
+```{r EEMnew}
+
+#Read in EEMs - this will read in every file that's in that folder
+#Read in all the files that are in your EEM folder
+#It works for aqualog files
+eem_list <- eem_read(fp.eems.raw, recursive = TRUE, import_function = "aqualog") 
+
+#remove all of the extra parts of the filenames - the "sample" part of each file in the list
+for(i in unique(1:length(eem_list))){
+  #remove the canned file info
+  eem_list[[i]]$sample <- sub(" .*", "", basename(eem_list[[i]]$sample))
+  #remove the E
+  eem_list[[i]]$sample <- substring(eem_list[[i]]$sample, 2)
+  #remove any emission wavelengths > 800 (above range we can correct for with absorbance data) - would be good for Wes to check
+  eem_list[[i]]$em <- eem_list[[i]]$em[1:306]
+  eem_list[[i]]$x <- eem_list[[i]]$x[1:306,]
+}
+
+
+#Read in absorbance in low resolution absorbance folder - these are the ones used for the inner filter effect
+#Then, will need to format to the same format as staRdom requires
+#They need to be in csvs with only the wavlength and absorbance values, without column names
+#Call in filenames
+filenames <- list.files(fp.lowa, pattern="*.dat", full.names = TRUE)
+
+#Folder for the csvs within lowres absorbance folder
+fp.lowa.csvs <- file.path(fp.lowa, "csvs")
+if(!dir.exists(fp.lowa.csvs)) {
+  dir.create(fp.lowa.csvs) 
+}
+
+#make sure it's not in scientific notation
+options(scipen = 999)
+#Write each absorbance spectra as a csv with only wavelength and absorbance
+for(i in unique((filenames))){
+  #read in each absorbance
+  oneabs <- read.delim(i)
+  #remove extra columns from each absorbance and rename appropriately
+  oneabs <- select(oneabs, wavelength = "Wavelength", absorbance = "Abs")
+  #remove the rows with units
+  oneabs <- oneabs[-c(1:2),]
+  #pull out just the name
+  name <- sub(" .*", "", basename(i))
+  #remove the A
+  name <- substring(name, 2)
+  #Arrange so it's listed by wavelength from low to high
+  oneabs <- arrange(oneabs, wavelength)
+  #and save to csv, just want the wavelength and value, not named
+  write.table(oneabs, file.path(fp.lowa,paste("csvs/",name,".csv", sep = "")), sep = ",", row.names = F, col.names = F, quote = F)
+}
+
+
+#Read in absorbance using staRdom
+absorbance_path <- fp.lowa.csvs
+absorbance <- absorbance_read(absorbance_path) # load csv or txt tables in folder
+
+
+#Make our metatable
+metatable <- eem_metatemplate(eem_list, absorbance)
+#add a columns for dilutions
+#In part 1, we make dilfac - the value it needs to be multiplied by
+#first rename dilfac so it's the same as the metatable
+colnames(dilfac) <- c("sample", "dilution")
+metatable <- merge(metatable, dilfac, by = "sample")
+
+#print the table out to the results section
+write.csv(metatable, file.path(fp.results,"staRdomMetatable.csv"), row.names = F)
+#read it in again - this is so it's consistent with staRdom instructions
+meta <- read.table(paste(fp.results, "/staRdomMetatable.csv", sep = ""), 
+                   header = TRUE, sep = ",", dec = ".", row.names = 1) # load data
+#Test if everything is working
+problem <- eem_checkdata(eem_list,absorbance,meta,metacolumns = c("dilution"),error=FALSE)
+
+#Absorbance spectral correction is already complete (blank subtraction occurs in software)
+#Instrument corrections are automatically applied in Aqualog software
+#EEM blank subtraction occurs in Aqualog software
+
+#IFE correction
+eem_list <- eem_ife_correction(eem_list,absorbance, cuvl = 1)
+#Our cuvl = 1, 1cm cuvette
+
+#Raman normalization:
+#Divide by the Raman area from the blanks
+#Need to pull out the blanks and calculate the Raman area 
+#First read in the not blank-subtracted EEMs for blanks 1-3 from the run
+eem_blank <- eem_read(fp.raman, recursive = TRUE, import_function = "aqualog") 
+
+#remove all of the extra parts of the filenames - the "sample" part of each file in the list
+for(i in unique(1:length(eem_blank))){
+  #remove the canned file info
+  eem_blank[[i]]$sample <- sub(" .*", "", basename(eem_blank[[i]]$sample))
+  #remove the E
+  eem_blank[[i]]$sample <- substring(eem_blank[[i]]$sample, 2)
+  #remove any emission wavelengths > 800 (above range we can correct for with absorbance data) - would be good for Wes to check
+  eem_blank[[i]]$em <- eem_blank[[i]]$em[1:306]
+  eem_blank[[i]]$x <- eem_blank[[i]]$x[1:306,]
+}
+
+#Calculate raman area using staRdom from the blanks that were not baseline subtracted
+raman.area <- eem_raman_area(eem_blank)
+raman.area.mean <- mean(raman.area$raman_area)
+#And then run the raman normalization with that value
+eem_list <- eem_raman_normalisation2(eem_list,raman.area.mean)
+
+#Remove blanks from EEM and absorbance sample lists
+eem_list <- eem_extract(eem_list, c("nano", "miliq", "milliq", "mq", "blank"),ignore_case = TRUE)
+absorbance <- dplyr::select(absorbance, -matches("nano|miliq|milliq|mq|blank", ignore.case = TRUE))
+
+#Remove and interpolate scattering
+remove_scatter <- c(TRUE, TRUE, TRUE, TRUE)
+remove_scatter_width <- c(15,15,15,15)
+
+eem_list <- eem_rem_scat(eem_list, remove_scatter = remove_scatter, remove_scatter_width = remove_scatter_width)
+#NOTE: It looks like one of the scatter lines is still slightly present in these samples.
+#It isn't in the range of our indices, so it's okay, but if this is carried on to PARAFAC analysis, it should be addressed.
+
+#Interpolate EEMs across scattering lines
+eem_list <- eem_interp(eem_list, type = 1, extend = FALSE)
+
+#Correction for dilution
+dil_data <- meta["dilution"]
+#Row name is sample name, the value in the one column is the dilution factor, could pull this from metadata sheet
+eem_list <- eem_dilution(eem_list,dil_data)
+
+#Smooth data for peak picking
+eem4peaks <- eem_smooth(eem_list, n = 4)
+
+#plot the EEMs
+pdf(paste(fp.results, "eemplots.pdf", sep = "/"))
+eem_overview_plot(eem_list, spp=9, contour = TRUE)
+dev.off()
+#Summarize the samples and the corrections that have been done
+summary(eem_list)
+#The blank corrected will be false since the Aqualog does it for us
+
+#And pull out all of the indices and peaks
+bix <- eem_biological_index(eem4peaks)
+coble_peaks <- eem_coble_peaks(eem4peaks)
+fi <- eem_fluorescence_index(eem4peaks)
+hix <- eem_humification_index(eem4peaks, scale = TRUE)
+#You will get an interpolation warning - that is fine
+
+indices_peaks <- bix %>%
+  full_join(coble_peaks, by = "sample") %>%
+  full_join(fi, by = "sample") %>%
+  full_join(hix, by = "sample")
+
+indices_peaks
+
+rm(bix, coble_peaks, dil_data, dilfac, eem_blank, fi, hix, meta, oneabs, problem, raman.area)
+
+#join oldindices, compliation (from absorbance), and indices_peaks
+#And then the version I'd paste into the masterfile - includes FI/HIX/BIX from staRdom, the protein-like and humic-like that we ran before, and the absorbance spectral slope, a254, etc
+#note: Peak T and the protein-like component are the same (although we didn't do some of the corrections with the old fluorometer data)
+#Remove the E/A at the start of the sample name in the old indices and absorbance
+compilation$sample <- substring(compilation$sample, 2)
+oldindices$sample <- substring(oldindices$sample, 2)
+#Join into one datatable
+allparameters <- indices_peaks %>%  full_join(oldindices, by = "sample") %>%  full_join(compilation, by = "sample")
+#And save
+write.csv(allparameters, file.path(fp.results,"AllResults.csv"))
+#And select for masterfile
+formasterfile <- select(allparameters, c("sample","bix","b","t","a","m","c","fi","hix","oldFI","oldBIX","oldHIX","P/H",
+                                         "Protein-like","Humic-like","decadic.a254","S275_295","S350_400","SRatio"), 
+                        napierian.a254 = "X254")
+write.csv(formasterfile, file.path(fp.results,"ResultsforMasterfile.csv"))
 ```
