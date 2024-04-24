@@ -43,7 +43,7 @@ Create a folder for the high resolution absorbance data (which we use), the EEMs
 ```{r fileOrg}
 # connect to raw data filepath
 #This pull out the working directory, can add ", "data"" and it specifies a folder within the WD
-fp.data <- file.path("C:/Users/shelts3/Dropbox/GradSchool/Research/MethodologiesGuidesAnalysisCode/lab-aqualog/20231030_ExampleRun_SASRoutineMonitoring")
+fp.data <- file.path("")
 
 # the final run results will be saved in:
 fp.results <- file.path(fp.data, "results")
@@ -647,9 +647,8 @@ rm(bix, coble_peaks, dil_data, dilfac, eem_blank, fi, hix, meta, oneabs, problem
 #join oldindices, compliation (from absorbance), and indices_peaks
 #And then the version I'd paste into the masterfile - includes FI/HIX/BIX from staRdom, the protein-like and humic-like that we ran before, and the absorbance spectral slope, a254, etc
 #note: Peak T and the protein-like component are the same (although we didn't do some of the corrections with the old fluorometer data)
-#Remove the E/A at the start of the sample name in the old indices and absorbance
+#Remove the E/A at the start of the sample name in the absorbance
 compilation$sample <- substring(compilation$sample, 2)
-oldindices$sample <- substring(oldindices$sample, 2)
 #Join into one datatable
 allparameters <- indices_peaks %>%  full_join(oldindices, by = "sample") %>%  full_join(compilation, by = "sample")
 #And save
